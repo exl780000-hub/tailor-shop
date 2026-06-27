@@ -1,4 +1,4 @@
-import { Client } from "@notionhq/client";
+const { Client } = require("@notionhq/client");
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
@@ -6,7 +6,7 @@ const ORDER_DB = "98f182579c2841a5a67631bebb23e769";
 const CUSTOMER_DB = "0bb6a9cb5c8244abb4af6e461695f002";
 const MEASUREMENT_DB = "1bfae58f449d47fba8083f316e266ebf";
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -32,8 +32,8 @@ export default async function handler(req, res) {
         properties: {
           "客戶姓名": { title: [{ text: { content: customer.name } }] },
           "電話": { phone_number: customer.phone },
-          "性別": customer.gender ? { select: { name: customer.gender } } : undefined,
-          "來源": customer.source ? { select: { name: customer.source } } : undefined,
+          ...(customer.gender ? { "性別": { select: { name: customer.gender } } } : {}),
+          ...(customer.source ? { "來源": { select: { name: customer.source } } } : {}),
         }
       });
       customerId = newCustomer.id;
@@ -45,7 +45,8 @@ export default async function handler(req, res) {
       "外套": "外套單件", "褲子": "褲子單件",
       "背心": "背心", "襯衫": "襯衫"
     };
-    const itemTypes = [...new Set(cards.map(c => itemTypeMap[c.type] || c.type))];
+    const rawTypes = cards.map(c => itemTypeMap[c.type] || c.type);
+    const itemTypes = [...new Set(rawTypes)];
 
     // 3. 工資計算
     const totalJacket = cards.reduce((s, c) => {
@@ -92,14 +93,15 @@ export default async function handler(req, res) {
       }
     });
 
-    // 5. 建立量身記錄（如果有填）
+    // 5. 建立量身記錄
     const hasMeasurements = measurements && Object.values(measurements).some(v => v !== "");
     if (hasMeasurements) {
-      const measProps = { "量身名稱": { title: [{ text: { content: customer.name + " - " + today } }] } };
-
-      if (customerId) measProps["客戶"] = { relation: [{ id: customerId }] };
-      measProps["訂單"] = { relation: [{ id: orderPage.id }] };
-      measProps["量身日期"] = { date: { start: today } };
+      const measProps = {
+        "量身名稱": { title: [{ text: { content: customer.name + " - " + today } }] },
+        "客戶": { relation: [{ id: customerId }] },
+        "訂單": { relation: [{ id: orderPage.id }] },
+        "量身日期": { date: { start: today } },
+      };
 
       const numFields = ["領圍","胸圍","腰圍","臀圍","肩寬","半肩寬","袖長","前胸寬","後背寬","前身長","後身長","後領寬","褲腰","褲長","前檔長","下檔長","大腿圍","小腿圍","腳踝圍","背心長","上臂圍","下臂圍"];
       numFields.forEach(f => {
@@ -118,7 +120,6 @@ export default async function handler(req, res) {
       success: true,
       orderId: orderPage.id,
       orderUrl: orderPage.url,
-      customerId,
       message: "訂單建立成功"
     });
 
@@ -129,4 +130,4 @@ export default async function handler(req, res) {
       error: err.message || "未知錯誤"
     });
   }
-}
+};
