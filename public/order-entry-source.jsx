@@ -1,0 +1,772 @@
+import { useState } from "react";
+
+const C = {
+  bg:"#0F1923", card:"#1A2535", border:"#2A3A50",
+  gold:"#C9A84C", ivory:"#F0EBE0", sage:"#7A9E8A",
+  red:"#E05252", green:"#5E9E6E", blue:"#4A7AB5", mid:"#2A3A50",
+};
+
+// ─── Pricing ──────────────────────────────────────────────────────────────────
+const GONGBEN = {
+  "二件式":  { 副料:1500, 外套工資:8500, 褲工資:1900, 版型:4500, 縫試穿:1500, 內裡:300, 鈕扣:500, 運費:400, 經理費:2000, 公司費:9800 },
+  "三件式":  { 副料:1700, 外套工資:8500, 褲工資:1900, 背心工資:1900, 版型:5800, 縫試穿:1850, 內裡:500, 鈕扣:500, 運費:600, 經理費:2400, 公司費:9800 },
+  "外套":    { 副料:1500, 外套工資:8500, 版型:3200, 縫試穿:1150, 內裡:300, 鈕扣:500, 運費:200, 經理費:1600, 公司費:7350 },
+  "褲子":    { 副料:500, 褲工資:1900, 版型:1300, 縫試穿:350, 內裡:100, 扣子:100, 運費:200, 經理費:400, 公司費:2450 },
+  "背心":    { 副料:200, 背心工資:1900, 內裡:200, 運費:200 },
+  "襯衫":    { 工資:800, 運費:400, 經理費:200 },
+};
+const DEF_YARDS = { "二件式":3.2, "三件式":4.0, "外套":2.5, "褲子":1.4, "背心":1.0, "襯衫":1.7 };
+
+function buSun(f) {
+  if(f<=4000)return 0; if(f<=6000)return 1000; if(f<=10000)return 2500;
+  if(f<=16000)return 4000; if(f<=20000)return 5000; if(f<=26000)return 6500; return 7000;
+}
+function profitRate(f, shirt) {
+  if(shirt){if(f<=800)return 0.55;if(f<=1500)return 0.70;if(f<=2000)return 0.75;if(f<=2500)return 0.80;return 0.85;}
+  if(f<=4000)return 0;if(f<=10000)return 0.10;if(f<=16000)return 0.15;
+  if(f<=20000)return 0.20;if(f<=26000)return 0.25;return 0.30;
+}
+
+function calcCard(card) {
+  const fabricTotal = Math.round(parseFloat(card.ppy||0) * parseFloat(card.yards||DEF_YARDS[card.type]||0)) || 0;
+  const isShirt = card.type === "襯衫";
+  const isSuit = card.type === "二件式" || card.type === "三件式";
+
+  let gongben = 0;
+  if (isSuit) {
+    gongben = Object.values(GONGBEN[card.type]).reduce((a,b)=>a+b,0);
+  } else {
+    gongben = Object.values(GONGBEN[card.type]||{}).reduce((a,b)=>a+b,0);
+  }
+
+  const bs = isShirt ? 0 : buSun(fabricTotal);
+  const pr = profitRate(fabricTotal, isShirt);
+  const raw = gongben + fabricTotal + bs;
+  const profit = Math.round(raw * pr);
+  const suggested = Math.ceil((raw+profit)/100)*100;
+  const actual = card.customPrice ? Number(card.customPrice) : suggested;
+  return { fabricTotal, gongben, bs, pr, raw, profit, suggested, actual };
+}
+
+// ─── Style Definitions ────────────────────────────────────────────────────────
+const STYLE = {
+  外套: [
+    { cat:"鬆度", opts:["稍窄","合身","寬鬆"] },
+    { cat:"排扣", opts:["單排釦","雙排釦"], input:{ key:"排扣扣數", label:"扣數" } },
+    { cat:"領型", opts:["劍領","平領"], input:{ key:"領寬", label:"領寬" } },
+    { cat:"開衩", opts:["無衩","單衩","雙衩"] },
+    { cat:"袖口", opts:["疊釦","平釦"], input:{ key:"袖口扣數", label:"扣數" } },
+    { cat:"眼型", opts:["真衩真眼","米蘭眼"], multi:true, defaults:["真衩真眼"] },
+    { cat:"特殊", opts:["跳色"], multi:true },
+  ],
+  褲子: [
+    { cat:"褶型", opts:["無褶","反一褶","反二褶","正一褶","正二褶"] },
+    { cat:"褲腳", opts:["平口","褲腳反褶"] },
+    { cat:"口袋", opts:["斜口袋","直口袋","L袋"] },
+    { cat:"長度", opts:["正式長","切平口","九分"] },
+    { cat:"腰頭", opts:["皮帶腰","甩腰頭","調整扣"], input:{ key:"腰頭扣數", label:"甩腰頭扣數" } },
+  ],
+  背心: [
+    { cat:"領型", opts:["劍領","平領","無領","絲瓜領"] },
+    { cat:"排扣", opts:["單排釦","雙排釦"], input:{ key:"背心排扣扣數", label:"扣數" } },
+    { cat:"口袋", opts:["雙開","方袋"] },
+    { cat:"胸袋", opts:["有胸袋","無胸袋"] },
+    { cat:"調整", opts:["調整袋","無調整"] },
+  ],
+  襯衫: [
+    { cat:"領型", opts:["一字領","大外八","中外八","標準領"], input:{ key:"領寬", label:"領寬" } },
+    { cat:"領扣", opts:["明扣領","暗扣領","自訂領型"] },
+    { cat:"領襯", opts:["軟襯","硬襯"] },
+    { cat:"領選", opts:["全包","背有腰線"], multi:true, defaults:["全包","背有腰線"] },
+    { cat:"袖型", opts:["一般圓角","大刀圓","切角","雙克夫"], input:{ key:"克夫寬", label:"克夫寬" } },
+    { cat:"袖扣", opts:[], input:{ key:"袖扣數", label:"扣子數" } },
+    { cat:"袖深", opts:[], input:{ key:"袖深加深", label:"袖深加深" } },
+    { cat:"門襟", opts:["有門襟","無門襟"] },
+    { cat:"口袋", opts:["有口袋","無口袋"] },
+    { cat:"手錶位", opts:["左手錶","右手錶"] },
+    { cat:"體型", opts:["挺胸","大挺胸","小駝背","駝背","平肩","大平肩","斜肩","大斜肩"], multi:true },
+  ],
+};
+
+// ─── Card type config ─────────────────────────────────────────────────────────
+const CARD_TYPES = {
+  "二件式": { label:"二件式", icon:"🤵", color:"#C9A84C", parts:["外套","褲子"], suit:true },
+  "三件式": { label:"三件式", icon:"👑", color:"#B87AB5", parts:["外套","褲子","背心"], suit:true },
+  "外套":   { label:"外套單件", icon:"👔", color:"#C9A84C", parts:["外套"], suit:false },
+  "褲子":   { label:"褲子單件", icon:"👖", color:"#4A7AB5", parts:["褲子"], suit:false },
+  "背心":   { label:"背心單件", icon:"🦺", color:"#7A9E8A", parts:["背心"], suit:false },
+  "襯衫":   { label:"襯衫", icon:"👕", color:"#E07A5F", parts:["襯衫"], suit:false },
+};
+
+const PART_COLOR = { 外套:"#C9A84C", 褲子:"#4A7AB5", 背心:"#7A9E8A", 襯衫:"#E07A5F" };
+
+// ─── Measurement ──────────────────────────────────────────────────────────────
+const MEAS_SUIT = [
+  { group:"上身", fields:["胸圍","腰圍","臀圍","肩寬","半肩寬","前胸寬","後背寬","領圍","上臂圍","下臂圍","手腕圍"] },
+  { group:"長度", fields:["袖長","前身長","後身長","背心長","後領寬"] },
+  { group:"下身", fields:["褲腰","褲長","前檔長","下檔長","大腿圍","小腿圍","腳踝圍"] },
+];
+const MEAS_SHIRT = [
+  { group:"襯衫尺寸", fields:["領圍","前長上","前長下","肩寬","胸圍","腰圍","臀圍","前胸","後背","袖長","手臂圍"] },
+];
+const BODY_TRAITS = {
+  "肩型":["一般肩","平肩","斜肩","右低肩","左低肩","肩側斜","回包肩"],
+  "背型":["圓背","背中凹","肩胛骨明顯","挺胸","駝背","一般"],
+  "腹型":["挺肚","骨盆前傾","骨盆後傾"],
+  "腿型":["O型腿","X型腿","小腿外凸","內八","外八","站開","站合"],
+  "褲長基準":["前褲長","後褲長","臀高","臀扁"],
+};
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+const Sec = ({title, children, accent, style={}}) => (
+  <div style={{background:C.card, border:`1px solid ${accent||C.border}`, borderRadius:12, padding:"16px 18px", marginBottom:12, ...style}}>
+    {title && <div style={{fontSize:12, color:accent||C.gold, fontWeight:700, letterSpacing:"0.07em", marginBottom:12, paddingBottom:9, borderBottom:`1px solid ${C.border}`}}>{title}</div>}
+    {children}
+  </div>
+);
+const Lbl = ({children}) => <div style={{fontSize:11, color:C.gold, fontWeight:700, letterSpacing:"0.07em", marginBottom:5}}>{children}</div>;
+const TxtIn = ({label, value, onChange, type="text", placeholder="", style={}}) => (
+  <div style={{display:"flex", flexDirection:"column", ...style}}>
+    {label && <Lbl>{label}</Lbl>}
+    <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      style={{background:C.mid, border:`1px solid ${C.border}`, borderRadius:8, padding:"9px 12px", color:C.ivory, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box"}} />
+  </div>
+);
+const Chip = ({label, active, onClick, color}) => (
+  <button onClick={onClick} style={{
+    cursor:"pointer", borderRadius:8, fontSize:12, fontWeight:600, padding:"7px 12px",
+    border:`1px solid ${active?(color||C.gold):C.border}`,
+    background:active?(color||C.gold)+"22":"transparent",
+    color:active?(color||C.gold):C.sage,
+  }}>{label}</button>
+);
+const NumIn = ({label, value, onChange, unit="in"}) => (
+  <div style={{display:"flex", flexDirection:"column", gap:3}}>
+    <div style={{fontSize:10, color:C.sage, textAlign:"center"}}>{label}</div>
+    <div style={{display:"flex", alignItems:"center", gap:3}}>
+      <input type="number" value={value} onChange={e=>onChange(e.target.value)}
+        style={{width:"100%", background:C.mid, border:`1px solid ${C.border}`, borderRadius:6, padding:"6px 6px", color:C.ivory, fontSize:12, outline:"none", boxSizing:"border-box", textAlign:"center"}} />
+      <span style={{fontSize:9, color:C.sage, whiteSpace:"nowrap"}}>{unit}</span>
+    </div>
+  </div>
+);
+
+// ─── Part Style Block ─────────────────────────────────────────────────────────
+function PartBlock({ part, styles, inputs, onToggle, onInput }) {
+  const defs = STYLE[part] || [];
+  const color = PART_COLOR[part];
+  return (
+    <div>
+      {defs.map(({cat, opts, multi, input, defaults}) => {
+        // skip pure-input cats that have no opts
+        const hasOpts = opts && opts.length > 0;
+        return (
+          <div key={cat} style={{marginBottom:11}}>
+            <div style={{fontSize:11, color:C.sage, fontWeight:600, marginBottom:5}}>{cat}</div>
+            <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
+              {hasOpts && opts.map(opt => {
+                const active = (styles[cat]||[]).includes(opt);
+                return (
+                  <button key={opt} onClick={()=>onToggle(cat, opt, !!multi)} style={{
+                    cursor:"pointer", borderRadius:6, fontSize:12, fontWeight:600, padding:"6px 10px",
+                    border:`1px solid ${active?color:C.border}`,
+                    background:active?color+"22":C.mid,
+                    color:active?color:C.sage,
+                  }}>{active?"☑ ":"☐ "}{opt}</button>
+                );
+              })}
+              {input && (
+                <div style={{display:"flex", alignItems:"center", gap:5, marginLeft:hasOpts?4:0}}>
+                  <span style={{fontSize:11, color:C.sage, whiteSpace:"nowrap"}}>{input.label}：</span>
+                  <input type="text" value={inputs[input.key]||""} onChange={e=>onInput(input.key,e.target.value)}
+                    placeholder="—"
+                    style={{width:65, background:C.mid, border:`1px solid ${color}66`, borderRadius:6, padding:"5px 8px", color:C.ivory, fontSize:12, outline:"none"}} />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Card Component ───────────────────────────────────────────────────────────
+function CardBlock({ card, cardIndex, onUpdate, onRemove }) {
+  const cfg = CARD_TYPES[card.type];
+  const color = cfg.color;
+  const { fabricTotal, gongben, bs, pr, suggested, actual } = calcCard(card);
+
+  const toggleStyle = (part, cat, opt, multi) => {
+    const partStyles = card.partStyles[part] || {};
+    const cur = partStyles[cat] || [];
+    let next;
+    if (multi) next = cur.includes(opt) ? cur.filter(v=>v!==opt) : [...cur,opt];
+    else next = cur.includes(opt) ? [] : [opt];
+    onUpdate({...card, partStyles:{...card.partStyles, [part]:{...partStyles,[cat]:next}}});
+  };
+  const setInput = (part, key, val) => {
+    const partInputs = card.partInputs[part] || {};
+    onUpdate({...card, partInputs:{...card.partInputs,[part]:{...partInputs,[key]:val}}});
+  };
+
+  return (
+    <div style={{background:C.card, border:`2px solid ${color}55`, borderRadius:14, marginBottom:14, overflow:"hidden"}}>
+      {/* Header */}
+      <div style={{background:color+"25", padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+        <div style={{fontSize:15, fontWeight:700, color}}>{cfg.icon} {cfg.label} #{cardIndex}</div>
+        <button onClick={onRemove} style={{cursor:"pointer", background:"transparent", border:"none", color:C.red, fontSize:18}}>✕</button>
+      </div>
+
+      <div style={{padding:"14px 16px"}}>
+        {/* Parts */}
+        {cfg.parts.map((part, pi) => (
+          <div key={part}>
+            {cfg.suit && (
+              <div style={{fontSize:12, color:PART_COLOR[part], fontWeight:700, letterSpacing:"0.07em",
+                marginBottom:10, marginTop:pi>0?16:0, paddingTop:pi>0?14:0,
+                borderTop:pi>0?`1px solid ${C.border}`:"none"}}>
+                {part === "外套" ? "👔 外套" : part === "褲子" ? "👖 褲子" : "🦺 背心"}
+              </div>
+            )}
+            <PartBlock
+              part={part}
+              styles={card.partStyles[part]||{}}
+              inputs={card.partInputs[part]||{}}
+              onToggle={(cat,opt,multi)=>toggleStyle(part,cat,opt,multi)}
+              onInput={(key,val)=>setInput(part,key,val)}
+            />
+          </div>
+        ))}
+
+        {/* 繡名（襯衫） */}
+        {card.type==="襯衫" && (
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:11, color:C.sage, fontWeight:600, marginBottom:5}}>繡名</div>
+            <input type="text" value={card.embroidery||""} onChange={e=>onUpdate({...card,embroidery:e.target.value})}
+              placeholder="繡名文字"
+              style={{width:"100%", boxSizing:"border-box", background:C.mid, border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 12px", color:C.ivory, fontSize:13, outline:"none"}} />
+          </div>
+        )}
+
+        {/* 特殊備註 */}
+        <div style={{marginTop:12}}>
+          <div style={{fontSize:11, color:C.sage, fontWeight:600, marginBottom:5}}>特殊備註</div>
+          <textarea value={card.note||""} onChange={e=>onUpdate({...card,note:e.target.value})}
+            placeholder="特殊要求、加工細節..."
+            style={{width:"100%", boxSizing:"border-box", background:C.mid, border:`1px solid ${C.border}`, borderRadius:8, padding:"9px 12px", color:C.ivory, fontSize:12, outline:"none", resize:"vertical", minHeight:55}} />
+        </div>
+
+        {/* 布料 */}
+        <div style={{marginTop:14, padding:"12px 14px", background:C.mid+"88", borderRadius:10, border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:11, color:color, fontWeight:700, marginBottom:10}}>🧵 布料</div>
+          <div style={{display:"flex", gap:10, marginBottom:8}}>
+            <TxtIn label={`單碼價`} type="number" value={card.ppy||""}
+              onChange={v=>onUpdate({...card,ppy:v})} placeholder="元/碼" style={{flex:1}} />
+            <TxtIn label={`碼數（預設${DEF_YARDS[card.type]}碼）`} type="number" value={card.yards||""}
+              onChange={v=>onUpdate({...card,yards:v})} placeholder={String(DEF_YARDS[card.type])} style={{flex:1}} />
+          </div>
+          {fabricTotal>0 && (
+            <div style={{fontSize:12, color:C.sage}}>
+              布料總價：<span style={{color:color, fontWeight:700, fontFamily:"Georgia,serif"}}>${fabricTotal.toLocaleString()}</span>
+              <span style={{fontSize:11, marginLeft:6}}>{card.ppy} × {card.yards||DEF_YARDS[card.type]} 碼</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Pricing Card (Step 4) ────────────────────────────────────────────────────
+function PriceBlock({ card, cardIndex, onUpdate }) {
+  const cfg = CARD_TYPES[card.type];
+  const color = cfg.color;
+  const { fabricTotal, gongben, bs, pr, suggested, actual } = calcCard(card);
+  const isSuit = cfg.suit;
+  const jacketPrice = Math.round(actual*3/4);
+  const trouserPrice = actual - jacketPrice;
+
+  return (
+    <div style={{background:C.card, border:`2px solid ${color}44`, borderRadius:12, marginBottom:12, overflow:"hidden"}}>
+      <div style={{background:color+"20", padding:"10px 16px", display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+        <div style={{fontSize:13, fontWeight:700, color}}>{cfg.icon} {cfg.label} #{cardIndex}</div>
+        <div style={{fontSize:13, fontWeight:700, color, fontFamily:"Georgia,serif"}}>${actual.toLocaleString()}</div>
+      </div>
+      <div style={{padding:"12px 16px"}}>
+        {[
+          ["工本費", gongben],
+          ["布料", fabricTotal],
+          ...(card.type!=="襯衫"?[["布損",bs]]:[]),
+          ["原始成本", gongben+fabricTotal+bs],
+          [`利潤（${(pr*100).toFixed(0)}%）`, Math.round((gongben+fabricTotal+bs)*pr)],
+        ].map(([lbl,val])=>(
+          <div key={lbl} style={{display:"flex", justifyContent:"space-between", padding:"5px 0", borderBottom:`1px solid ${C.border}`}}>
+            <span style={{fontSize:12, color:lbl==="原始成本"?C.ivory:C.sage, fontWeight:lbl==="原始成本"?700:400}}>{lbl}</span>
+            <span style={{fontSize:12, color:lbl.includes("利潤")?C.green:lbl==="原始成本"?C.gold:C.ivory, fontFamily:"Georgia,serif"}}>${Number(val).toLocaleString()}</span>
+          </div>
+        ))}
+
+        {/* 建議售價 */}
+        <div style={{marginTop:10, padding:"10px 14px", background:C.gold+"15", border:`1px solid ${C.gold}33`, borderRadius:8, textAlign:"center"}}>
+          <div style={{fontSize:10, color:C.sage, marginBottom:2}}>建議售價</div>
+          <div style={{fontSize:24, fontWeight:700, color:C.gold, fontFamily:"Georgia,serif"}}>${suggested.toLocaleString()}</div>
+        </div>
+
+        {/* 自訂售價 */}
+        <div style={{marginTop:10}}>
+          <div style={{fontSize:11, color:C.sage, fontWeight:600, marginBottom:5}}>自訂售價（選填）</div>
+          <div style={{display:"flex", gap:8, alignItems:"center"}}>
+            <input type="number" value={card.customPrice||""} onChange={e=>onUpdate({...card,customPrice:e.target.value})}
+              placeholder={`建議 $${suggested.toLocaleString()}`}
+              style={{flex:1, background:C.mid, border:`1px solid ${card.customPrice?color:C.border}`, borderRadius:8, padding:"8px 12px", color:C.ivory, fontSize:14, fontWeight:700, outline:"none"}} />
+            {card.customPrice && <button onClick={()=>onUpdate({...card,customPrice:""})} style={{cursor:"pointer", background:"transparent", border:"none", color:C.sage, fontSize:12}}>清除</button>}
+          </div>
+          {card.customPrice && (
+            <div style={{marginTop:6, padding:"8px 12px", background:C.green+"18", border:`1px solid ${C.green}44`, borderRadius:8, display:"flex", justifyContent:"space-between"}}>
+              <span style={{fontSize:11, color:C.sage}}>實際售價</span>
+              <span style={{fontSize:16, fontWeight:700, color:C.green, fontFamily:"Georgia,serif"}}>${Number(card.customPrice).toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+
+        {/* 二件式拆分 */}
+        {card.type==="二件式" && (
+          <div style={{display:"flex", gap:8, marginTop:10}}>
+            <div style={{flex:3, background:C.mid, borderRadius:8, padding:"10px", textAlign:"center"}}>
+              <div style={{fontSize:10, color:C.sage}}>外套（3/4）</div>
+              <div style={{fontSize:16, fontWeight:700, color:C.ivory, fontFamily:"Georgia,serif"}}>${jacketPrice.toLocaleString()}</div>
+            </div>
+            <div style={{flex:1, background:C.mid, borderRadius:8, padding:"10px", textAlign:"center"}}>
+              <div style={{fontSize:10, color:C.sage}}>褲子（1/4）</div>
+              <div style={{fontSize:16, fontWeight:700, color:C.ivory, fontFamily:"Georgia,serif"}}>${trouserPrice.toLocaleString()}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Steps ────────────────────────────────────────────────────────────────────
+const STEPS = ["客戶","樣式","量身","報價"];
+const ALL_MEAS = MEAS_SUIT.flatMap(g=>g.fields);
+
+function newCard(type) {
+  const cfg = CARD_TYPES[type];
+  const initStyles = {};
+  const initInputs = {};
+  // 預設勾選
+  cfg.parts.forEach(part => {
+    initStyles[part] = {};
+    initInputs[part] = {};
+    (STYLE[part]||[]).forEach(({cat,defaults})=>{
+      if(defaults) initStyles[part][cat] = [...defaults];
+    });
+  });
+  return { id:Date.now(), type, partStyles:initStyles, partInputs:initInputs, note:"", ppy:"", yards:"", customPrice:"", embroidery:"" };
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [step, setStep] = useState(0);
+  const [customer, setCustomer] = useState({name:"",phone:"",gender:"",source:""});
+  const [cards, setCards] = useState([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [meas, setMeas] = useState(()=>Object.fromEntries(ALL_MEAS.map(f=>[f,""])));
+  const [shirtMeas, setShirtMeas] = useState(()=>Object.fromEntries(MEAS_SHIRT[0].fields.map(f=>[f,""])));
+  const [traits, setTraits] = useState({});
+  const [measNote, setMeasNote] = useState("");
+  const [deposit, setDeposit] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState(null);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setSubmitResult(null);
+    try {
+      const itemTypes = [...new Set(cards.map(c => {
+        if (c.type === "外套") return "外套單件";
+        if (c.type === "褲子") return "褲子單件";
+        return c.type;
+      }))];
+
+      const styleDetail = JSON.stringify(cards.map(c => ({
+        type: c.type,
+        partStyles: c.partStyles,
+        partInputs: c.partInputs,
+        note: c.note,
+        ppy: c.ppy,
+        yards: c.yards,
+        customPrice: c.customPrice,
+        embroidery: c.embroidery,
+      })));
+
+      const totalJacket = cards.reduce((s, c) => {
+        if (!["二件式","三件式","外套"].includes(c.type)) return s;
+        const ps = c.partStyles["外套"] || {};
+        let w = 7000;
+        if ((ps["排扣"] || []).includes("雙排釦")) w += 600;
+        if ((ps["領型"] || []).includes("劍領")) w += 300;
+        if ((ps["眼型"] || []).includes("米蘭眼")) w += 100;
+        return s + w;
+      }, 0);
+
+      const totalTrouser = cards.reduce((s, c) =>
+        ["二件式","三件式","褲子"].includes(c.type) ? s + 1900 : s, 0);
+
+      const totalManager = cards.reduce((s, c) => {
+        const m = {"二件式":2000,"三件式":2400,"外套":1600,"褲子":400,"背心":0,"襯衫":200};
+        return s + (m[c.type] || 0);
+      }, 0);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const orderName = customer.name + " - " + itemTypes.join("、") + " - " + today;
+
+      const prompt = "請使用 Notion MCP 工具在訂單資料庫（data_source_id: e02cb643-77df-4e54-9372-6d1d3f169944）建立一筆訂單。"
+        + "訂單名稱：" + orderName
+        + "。品項：" + JSON.stringify(itemTypes)
+        + "。卡片數量：" + cards.length
+        + "。實際售價：" + totalActual
+        + "。建議售價：" + totalSuggested
+        + "。訂金：" + (Number(deposit) || 0)
+        + "。尾款：" + (totalActual - (Number(deposit) || 0))
+        + "。外套工資：" + totalJacket
+        + "。褲子工資：" + totalTrouser
+        + "。經理費：" + totalManager
+        + "。師傅工資合計：" + (totalJacket + totalTrouser + totalManager)
+        + "。樣式明細：" + styleDetail
+        + "。訂單狀態：✅ 訂單成立。流程：📋 訂單建立。訂單日期：" + today
+        + "。建立完成後請回傳頁面 URL。";
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 2000,
+          messages: [{ role: "user", content: prompt }],
+          mcp_servers: [{ type: "url", url: "https://mcp.notion.com/mcp", name: "notion" }]
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error("API錯誤 " + response.status + ": " + errText.slice(0, 200));
+      }
+
+      const raw = await response.text();
+      console.log("API raw response:", raw);
+
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (parseErr) {
+        throw new Error("無法解析回傳: " + raw.slice(0, 300));
+      }
+
+      if (data.error) {
+        throw new Error((data.error.message || JSON.stringify(data.error)).slice(0, 300));
+      }
+
+      if (!data.content || !Array.isArray(data.content)) {
+        throw new Error("回傳格式異常: " + JSON.stringify(data).slice(0, 300));
+      }
+
+      const text = data.content
+        .filter(function(b) { return b.type === "text"; })
+        .map(function(b) { return b.text; })
+        .join(" ");
+
+      const notionPrefix = "https://app.notion.com/p/";
+      const idx = text.indexOf(notionPrefix);
+      let notionUrl = null;
+      if (idx !== -1) {
+        const afterPrefix = text.slice(idx + notionPrefix.length);
+        const spaceIdx = afterPrefix.indexOf(" ");
+        const newlineIdx = afterPrefix.indexOf("\n");
+        const quoteIdx = afterPrefix.indexOf('"');
+        const candidates = [spaceIdx, newlineIdx, quoteIdx].filter(function(n){ return n !== -1; });
+        const cutAt = candidates.length > 0 ? Math.min.apply(null, candidates) : afterPrefix.length;
+        notionUrl = notionPrefix + afterPrefix.slice(0, cutAt);
+      }
+      setSubmitResult({ success: true, message: "訂單已成功建立！", url: notionUrl });
+
+    } catch(err) {
+      setSubmitResult({ success: false, message: "建立失敗：" + err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const updateCard = (id,updated) => setCards(prev=>prev.map(c=>c.id===id?updated:c));
+  const removeCard = (id) => setCards(prev=>prev.filter(c=>c.id!==id));
+  const addCard = (type) => { setCards(prev=>[...prev, newCard(type)]); setShowPicker(false); };
+
+  const hasShirt = cards.some(c=>c.type==="襯衫");
+  const hasSuit = cards.some(c=>c.type==="二件式"||c.type==="三件式"||c.type==="外套"||c.type==="褲子"||c.type==="背心");
+
+  const totalActual = cards.reduce((s,c)=>s+calcCard(c).actual,0);
+  const totalSuggested = cards.reduce((s,c)=>s+calcCard(c).suggested,0);
+
+  // card index per type
+  const cardIndexMap = {};
+  const getIndex = (card) => {
+    cardIndexMap[card.type] = (cardIndexMap[card.type]||0)+1;
+    return cardIndexMap[card.type];
+  };
+
+  const canNext = [
+    customer.name && customer.phone,
+    cards.length>0,
+    true, true,
+  ][step];
+
+  return (
+    <div style={{minHeight:"100vh", background:C.bg, color:C.ivory, fontFamily:"-apple-system,'Segoe UI',sans-serif"}}>
+      {/* Header */}
+      <div style={{background:C.card, borderBottom:`1px solid ${C.border}`, padding:"13px 18px", display:"flex", alignItems:"center", gap:10}}>
+        <div style={{fontSize:18, color:C.gold, fontFamily:"Georgia,serif"}}>✦</div>
+        <div><div style={{fontSize:14, fontWeight:700}}>新增訂單</div><div style={{fontSize:10, color:C.sage}}>GONY Bespoke</div></div>
+      </div>
+
+      {/* Step Bar */}
+      <div style={{display:"flex", background:C.card, borderBottom:`1px solid ${C.border}`}}>
+        {STEPS.map((s,i)=>(
+          <button key={s} onClick={()=>setStep(i)} style={{
+            flex:1, cursor:"pointer", background:"none", border:"none",
+            padding:"11px 4px", borderBottom:`2px solid ${step===i?C.gold:"transparent"}`,
+            color:step===i?C.gold:i<step?C.sage:C.border, fontSize:11, fontWeight:700,
+          }}>
+            <div style={{fontSize:14, marginBottom:1}}>{"①②③④"[i]}</div>{s}
+          </button>
+        ))}
+      </div>
+
+      <div style={{maxWidth:520, margin:"0 auto", padding:"14px 14px 110px"}}>
+
+        {/* ① 客戶 */}
+        {step===0 && (
+          <Sec title="👤 客戶資料">
+            <div style={{display:"flex", flexDirection:"column", gap:12}}>
+              <TxtIn label="姓名 *" value={customer.name} onChange={v=>setCustomer(p=>({...p,name:v}))} placeholder="客戶姓名" />
+              <TxtIn label="手機 *" type="tel" value={customer.phone} onChange={v=>setCustomer(p=>({...p,phone:v}))} placeholder="0912-345-678" />
+              <div>
+                <Lbl>性別</Lbl>
+                <div style={{display:"flex", gap:8}}>
+                  {["先生","女士"].map(g=><Chip key={g} label={g} active={customer.gender===g} onClick={()=>setCustomer(p=>({...p,gender:g}))} />)}
+                </div>
+              </div>
+              <div>
+                <Lbl>來源</Lbl>
+                <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
+                  {["介紹","自來","社群","網頁","其他"].map(s=><Chip key={s} label={s} active={customer.source===s} onClick={()=>setCustomer(p=>({...p,source:s}))} />)}
+                </div>
+              </div>
+            </div>
+          </Sec>
+        )}
+
+        {/* ② 樣式 */}
+        {step===1 && (
+          <>
+            {(() => { Object.keys(cardIndexMap).forEach(k=>delete cardIndexMap[k]); return null; })()}
+            {cards.map(card=>(
+              <CardBlock key={card.id} card={card} cardIndex={getIndex(card)}
+                onUpdate={updated=>updateCard(card.id,updated)}
+                onRemove={()=>removeCard(card.id)} />
+            ))}
+
+            {showPicker ? (
+              <Sec>
+                <div style={{fontSize:12, color:C.sage, marginBottom:10, fontWeight:600}}>選擇品項</div>
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:11, color:C.sage, marginBottom:7}}>套裝</div>
+                  <div style={{display:"flex", gap:8}}>
+                    {["二件式","三件式"].map(t=>{
+                      const cfg=CARD_TYPES[t];
+                      return (
+                        <button key={t} onClick={()=>addCard(t)} style={{
+                          flex:1, cursor:"pointer", borderRadius:10, padding:"14px 8px",
+                          border:`1px solid ${cfg.color}66`, background:cfg.color+"18",
+                          color:cfg.color, fontSize:14, fontWeight:700, textAlign:"center",
+                        }}>
+                          <div style={{fontSize:22, marginBottom:4}}>{cfg.icon}</div>{cfg.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:11, color:C.sage, marginBottom:7}}>單件</div>
+                  <div style={{display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8}}>
+                    {["外套","褲子","背心","襯衫"].map(t=>{
+                      const cfg=CARD_TYPES[t];
+                      return (
+                        <button key={t} onClick={()=>addCard(t)} style={{
+                          cursor:"pointer", borderRadius:10, padding:"12px 8px",
+                          border:`1px solid ${cfg.color}66`, background:cfg.color+"18",
+                          color:cfg.color, fontSize:13, fontWeight:700, textAlign:"center",
+                        }}>
+                          <div style={{fontSize:20, marginBottom:3}}>{cfg.icon}</div>{cfg.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <button onClick={()=>setShowPicker(false)} style={{marginTop:12, cursor:"pointer", background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 16px", color:C.sage, fontSize:12, width:"100%"}}>取消</button>
+              </Sec>
+            ) : (
+              <button onClick={()=>setShowPicker(true)} style={{
+                width:"100%", padding:"14px", borderRadius:12, border:`2px dashed ${C.border}`,
+                background:"transparent", color:C.sage, fontSize:14, fontWeight:700, cursor:"pointer",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+              }}>
+                <span style={{fontSize:18}}>+</span> 新增品項
+              </button>
+            )}
+          </>
+        )}
+
+        {/* ③ 量身 */}
+        {step===2 && (
+          <>
+            {hasSuit && MEAS_SUIT.map(({group,fields})=>(
+              <Sec key={group} title={`📐 ${group}（英吋）`}>
+                <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10}}>
+                  {fields.map(f=><NumIn key={f} label={f} value={meas[f]} onChange={v=>setMeas(p=>({...p,[f]:v}))} />)}
+                </div>
+              </Sec>
+            ))}
+
+            {hasShirt && (
+              <Sec title="👕 襯衫尺寸（英吋）">
+                <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10}}>
+                  {MEAS_SHIRT[0].fields.map(f=><NumIn key={f} label={f} value={shirtMeas[f]} onChange={v=>setShirtMeas(p=>({...p,[f]:v}))} />)}
+                </div>
+              </Sec>
+            )}
+
+            {hasSuit && (
+              <Sec title="🧍 體型特徵">
+                {Object.entries(BODY_TRAITS).map(([cat,opts])=>(
+                  <div key={cat} style={{marginBottom:12}}>
+                    <div style={{fontSize:11, color:C.sage, fontWeight:600, marginBottom:6}}>{cat}</div>
+                    <div style={{display:"flex", flexWrap:"wrap", gap:6}}>
+                      {opts.map(opt=>{
+                        const active=(traits[cat]||[]).includes(opt);
+                        return (
+                          <button key={opt} onClick={()=>{
+                            const cur=traits[cat]||[];
+                            setTraits(p=>({...p,[cat]:active?cur.filter(v=>v!==opt):[...cur,opt]}));
+                          }} style={{
+                            cursor:"pointer", borderRadius:6, fontSize:12, fontWeight:600, padding:"6px 10px",
+                            border:`1px solid ${active?C.gold:C.border}`,
+                            background:active?C.gold+"22":C.mid, color:active?C.gold:C.sage,
+                          }}>{active?"☑ ":"☐ "}{opt}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <div style={{marginTop:4}}>
+                  <Lbl>備註</Lbl>
+                  <textarea value={measNote} onChange={e=>setMeasNote(e.target.value)} placeholder="其他體型特徵..."
+                    style={{width:"100%", boxSizing:"border-box", background:C.mid, border:`1px solid ${C.border}`, borderRadius:8, padding:"9px 12px", color:C.ivory, fontSize:12, outline:"none", resize:"vertical", minHeight:55}} />
+                </div>
+              </Sec>
+            )}
+          </>
+        )}
+
+        {/* ④ 報價 */}
+        {step===3 && (
+          <>
+            {(() => { Object.keys(cardIndexMap).forEach(k=>delete cardIndexMap[k]); return null; })()}
+            {cards.map(card=>(
+              <PriceBlock key={card.id} card={card} cardIndex={getIndex(card)}
+                onUpdate={updated=>updateCard(card.id,updated)} />
+            ))}
+
+            {/* 總計 */}
+            <Sec title="💰 訂單總計">
+              {totalSuggested !== totalActual && (
+                <div style={{display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:`1px solid ${C.border}`}}>
+                  <span style={{fontSize:12, color:C.sage}}>建議總售價</span>
+                  <span style={{fontSize:13, color:C.sage, fontFamily:"Georgia,serif"}}>${totalSuggested.toLocaleString()}</span>
+                </div>
+              )}
+              <div style={{display:"flex", justifyContent:"space-between", padding:"10px 0", borderBottom:`1px solid ${C.border}`}}>
+                <span style={{fontSize:14, color:C.ivory, fontWeight:700}}>實際總售價</span>
+                <span style={{fontSize:20, color:C.gold, fontWeight:700, fontFamily:"Georgia,serif"}}>${totalActual.toLocaleString()}</span>
+              </div>
+              <div style={{marginTop:14}}>
+                <TxtIn label="訂金" type="number" value={deposit} onChange={setDeposit} placeholder="例：20000" />
+                {deposit && (
+                  <div style={{marginTop:10, display:"flex", justifyContent:"space-between", padding:"8px 12px", background:C.green+"15", border:`1px solid ${C.green}44`, borderRadius:8}}>
+                    <span style={{fontSize:12, color:C.sage}}>尾款</span>
+                    <span style={{fontSize:16, fontWeight:700, color:C.green, fontFamily:"Georgia,serif"}}>${(totalActual-Number(deposit)).toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            </Sec>
+
+            {/* 摘要 */}
+            <Sec title="📋 訂單摘要">
+              {[
+                ["客戶", customer.name],
+                ["手機", customer.phone],
+                ["品項數", `${cards.length} 件`],
+                ["實際總售價", `$${totalActual.toLocaleString()}`],
+                ["訂金", deposit?`$${Number(deposit).toLocaleString()}`:"—"],
+                ["尾款", deposit?`$${(totalActual-Number(deposit)).toLocaleString()}`:"—"],
+              ].map(([k,v])=>(
+                <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:`1px solid ${C.border}`}}>
+                  <span style={{fontSize:12, color:C.sage}}>{k}</span>
+                  <span style={{fontSize:13, color:C.ivory, fontWeight:600}}>{v}</span>
+                </div>
+              ))}
+            </Sec>
+
+            {submitResult && (
+              <div style={{marginBottom:12, padding:"14px 16px", borderRadius:10,
+                background:submitResult.success?C.green+"22":C.red+"22",
+                border:`1px solid ${submitResult.success?C.green:C.red}44`}}>
+                <div style={{fontSize:13, fontWeight:700, color:submitResult.success?C.green:C.red, marginBottom:4}}>
+                  {submitResult.success?"✅ ":"❌ "}{submitResult.message}
+                </div>
+                {submitResult.url && (
+                  <a href={submitResult.url} target="_blank" rel="noreferrer"
+                    style={{fontSize:12, color:C.blue, textDecoration:"none"}}>
+                    → 在 Notion 查看訂單
+                  </a>
+                )}
+              </div>
+            )}
+            <button onClick={handleSubmit} disabled={submitting} style={{
+              width:"100%", padding:"15px", borderRadius:12, border:"none",
+              background:submitting?C.mid:C.gold, color:submitting?C.sage:C.bg,
+              fontSize:15, fontWeight:700, cursor:submitting?"default":"pointer", letterSpacing:"0.05em"
+            }}>
+              {submitting?"⏳ 建立中...":"✦ 確認建立訂單"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Bottom Nav */}
+      <div style={{position:"fixed", bottom:0, left:0, right:0, background:C.card, borderTop:`1px solid ${C.border}`, padding:"12px 14px", display:"flex", gap:10, maxWidth:520, margin:"0 auto", left:"50%", transform:"translateX(-50%)", width:"100%", boxSizing:"border-box"}}>
+        {step>0 && (
+          <button onClick={()=>setStep(p=>p-1)} style={{flex:1, padding:"12px", borderRadius:10, border:`1px solid ${C.border}`, background:"transparent", color:C.sage, fontSize:14, fontWeight:700, cursor:"pointer"}}>← 上一步</button>
+        )}
+        {step<3 && (
+          <button onClick={()=>canNext&&setStep(p=>p+1)} style={{
+            flex:2, padding:"12px", borderRadius:10, border:"none",
+            background:canNext?C.gold:C.mid, color:canNext?C.bg:C.border,
+            fontSize:14, fontWeight:700, cursor:canNext?"pointer":"default",
+          }}>下一步 →</button>
+        )}
+      </div>
+    </div>
+  );
+}

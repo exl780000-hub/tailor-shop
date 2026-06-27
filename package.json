@@ -1,0 +1,11 @@
+{
+  "name": "tailor-shop",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.2.15"
+  }
+}
