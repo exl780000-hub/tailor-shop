@@ -2,15 +2,7 @@
   "name": "tailor-shop",
   "version": "1.0.0",
   "private": true,
-  "scripts": {
-    "build": "node build.mjs"
-  },
   "dependencies": {
     "@notionhq/client": "^2.2.15"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.24.0",
-    "@babel/preset-react": "^7.24.0",
-    "@babel/preset-env": "^7.24.0"
   }
 }
